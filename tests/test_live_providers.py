@@ -277,7 +277,48 @@ def test_live_providers():
     assert reset_data["active_agent"] == "intake_triage"
     print("  [OK] Session and CallState cleanly reset to Turn #0")
 
-    # 9. Wall-Clock Latency Scoreboard
+    # 9. Verify Comparison Matrix Endpoint (GET /api/telemetry/comparison-matrix)
+    print("\n> STEP 9: Verifying GET /api/telemetry/comparison-matrix (Multi-Model & Multi-Region Matrix)...")
+    matrix_res = client.get("/api/telemetry/comparison-matrix")
+    assert matrix_res.status_code == 200, f"Comparison matrix failed: {matrix_res.text}"
+    matrix_data = matrix_res.json()
+    assert "comparison_matrix" in matrix_data, "Missing 'comparison_matrix' key in response"
+    profiles = matrix_data["comparison_matrix"]
+    assert len(profiles) == 3, f"Expected 3 comparative profiles, got {len(profiles)}"
+
+    # Profile 1: Sovereign Indic Stack (Ours)
+    p1 = profiles[0]
+    assert p1["profile_name"] == "Sovereign Indic Stack (Ours)"
+    assert "ap-south" in p1["region"]
+    assert p1["e2e_turn_latency_ms"] == 643.8
+    assert p1["audio_snr_db"] == 21.8
+    assert p1["noise_reduction_gain_db"] == "+17.6 dB"
+    assert p1["word_error_rate_pct"] == 6.8
+    assert p1["cost_per_minute_usd"] == 0.0142
+    assert p1["llm_cost_savings_pct"] == 53.6
+    assert "NDMA/MHA" in p1["data_sovereignty"]
+    print(f"  [OK] Profile 1: {p1['profile_name']} (E2E: {p1['e2e_turn_latency_ms']}ms, SNR: {p1['audio_snr_db']}dB, Cost: ${p1['cost_per_minute_usd']}/min)")
+
+    # Profile 2: Standard US Cloud Baseline
+    p2 = profiles[1]
+    assert p2["profile_name"] == "Standard US Cloud Baseline"
+    assert "us-east-1" in p2["region"]
+    assert p2["e2e_turn_latency_ms"] == 1315.8
+    assert p2["audio_snr_db"] == 4.2
+    assert p2["word_error_rate_pct"] == 19.5
+    assert p2["cost_per_minute_usd"] == 0.0306
+    print(f"  [OK] Profile 2: {p2['profile_name']} (E2E: {p2['e2e_turn_latency_ms']}ms, SNR: {p2['audio_snr_db']}dB, Cost: ${p2['cost_per_minute_usd']}/min)")
+
+    # Profile 3: EU Open-Source Stack
+    p3 = profiles[2]
+    assert p3["profile_name"] == "EU Open-Source Stack"
+    assert "eu-central-1" in p3["region"]
+    assert p3["e2e_turn_latency_ms"] == 1015.6
+    assert p3["audio_snr_db"] == 11.5
+    assert p3["cost_per_minute_usd"] == 0.0220
+    print(f"  [OK] Profile 3: {p3['profile_name']} (E2E: {p3['e2e_turn_latency_ms']}ms, SNR: {p3['audio_snr_db']}dB, Cost: ${p3['cost_per_minute_usd']}/min)")
+
+    # 10. Wall-Clock Latency Scoreboard
     print("\n" + "=" * 76)
     print("  WALL-CLOCK REAL LATENCY BENCHMARK SCOREBOARD (SOVEREIGN vs US-EAST)")
     print("=" * 76)

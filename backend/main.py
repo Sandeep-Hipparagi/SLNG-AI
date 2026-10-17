@@ -447,6 +447,12 @@ async def get_metrics():
     return telemetry.get_metrics_summary()
 
 
+@app.get("/api/telemetry/comparison-matrix")
+async def get_comparison_matrix_endpoint():
+    """Returns structured multi-model and multi-region comparative matrix."""
+    return telemetry.get_comparison_matrix()
+
+
 @app.get("/api/state")
 async def get_current_call_state():
     """Returns current typed CallState snapshot."""
