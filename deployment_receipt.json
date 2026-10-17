@@ -1,0 +1,44 @@
+{
+  "timestamp": "2026-10-17T09:41:00Z",
+  "status": "SUCCESSFULLY DEPLOYED TO SLNG PLATFORM",
+  "push_method_used": "SLNG REST API DIRECT PUSH (Primary) & PLAYWRIGHT BROWSER AUTOMATION (Fallback)",
+  "project_id": "aab9b970-f70f-4b20-a422-733ad84e5ded",
+  "agent_id": "3ffe2e18-fb0d-415d-9da5-3b137e26de4b",
+  "agent_name": "sovereign-indic-triage-agent",
+  "region": "ap-south",
+  "world_part_code": "in",
+  "world_part_label": "India (ap-south sovereign route)",
+  "livekit_cluster": "slng-livekit-cluster-a-in",
+  "webhook_url": "http://localhost:8000/api/tools/log-incident",
+  "models": {
+    "stt": "deepgram/nova:3",
+    "llm": "gemini/google/gemini-2.5-flash:latest",
+    "tts": "cartesia/sonic:3 (Voice: dda51133-5d43-4a3b-84e6-e68c13f60cba / Lily - Casual Pal)"
+  },
+  "tools_attached": [
+    "end_call (Curated Builtin ID: 952eb6b1-fa3f-47a5-9ec5-ccee65d5eba3, v1)",
+    "verify_and_log_incident (API Request Tool ID: b752258a-0714-4d47-a668-823312c19b20 -> http://localhost:8000/api/tools/log-incident)"
+  ],
+  "verification": {
+    "api_health_check": "PASS (ACTIVE 200 OK via https://api.agents.slng.ai/v1/agents/3ffe2e18-fb0d-415d-9da5-3b137e26de4b)",
+    "browser_automation": "PASS (Captured screenshot evidence: deployment_success.png)",
+    "dashboard_url": "https://app.slng.ai/projects/aab9b970-f70f-4b20-a422-733ad84e5ded",
+    "agent_url": "https://app.slng.ai/projects/aab9b970-f70f-4b20-a422-733ad84e5ded/agents/3ffe2e18-fb0d-415d-9da5-3b137e26de4b"
+  },
+  "methods": {
+    "method_1_api_direct": {
+      "endpoint": "https://api.agents.slng.ai/v1/agents",
+      "method": "POST / PUT",
+      "status_code": 200,
+      "agent_id": "3ffe2e18-fb0d-415d-9da5-3b137e26de4b",
+      "project_id": "aab9b970-f70f-4b20-a422-733ad84e5ded",
+      "health_status": "ACTIVE"
+    },
+    "method_2_browser_automation": {
+      "portal_url": "https://app.slng.ai/projects",
+      "runner": "Playwright Chromium (Headless)",
+      "screenshot": "deployment_success.png",
+      "status": "COMPLETED"
+    }
+  }
+}

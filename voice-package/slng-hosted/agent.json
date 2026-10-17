@@ -1,0 +1,71 @@
+{
+  "schema_version": 2,
+  "name": "sovereign-triage-slng-slng",
+  "system_prompt": "# Sovereign Indic Triage & Compliance Agent\n\nYou are the Sovereign Emergency Triage and Compliance Voice Officer running on SLNG's low-latency India sovereign execution layer with Google Gemini 2.5 Flash reasoning.\n\n## CONVERSATION FLOW\n1. Greet the caller and listen attentively.\n2. Obtain:\n   - Caller Name\n   - Incident Location (city / area)\n   - Incident Description\n3. Execute `verify_and_log_incident` to verify regulatory compliance and record the incident ticket.\n4. Execute `fetch_emergency_protocol` to retrieve immediate life-safety instructions.\n5. Provide the confirmation ticket number and the immediate 2-step protocol clearly.\n6. End the call politely via `end_call`.\n",
+  "greeting": "Namaste. Sovereign Emergency and Compliance Dispatch on SLNG India. Please state your name, location, and what happened.",
+  "region": "in",
+  "models": {
+    "stt": "deepgram/nova:3",
+    "llm": "google/gemini-2.5-flash",
+    "tts": "cartesia/sonic:3",
+    "tts_voice": "sonic-english",
+    "stt_kwargs": {},
+    "llm_kwargs": {},
+    "tts_kwargs": {}
+  },
+  "enable_interruptions": true,
+  "tool_mode": "shared",
+  "tool_refs": [
+    {
+      "tool": "verify_and_log_incident",
+      "invocation": "model",
+      "execution_policy": {
+        "pre_action_message": {
+          "enabled": true,
+          "text": {
+            "segments": [
+              {
+                "type": "literal",
+                "value": "Logging incident ticket and initiating sovereign compliance checks."
+              }
+            ]
+          },
+          "wait": false
+        }
+      },
+      "argument_overrides": {}
+    },
+    {
+      "tool": "fetch_emergency_protocol",
+      "invocation": "model",
+      "execution_policy": {
+        "pre_action_message": {
+          "enabled": true,
+          "text": {
+            "segments": [
+              {
+                "type": "literal",
+                "value": "Retrieving immediate sovereign emergency response protocols."
+              }
+            ]
+          },
+          "wait": false
+        }
+      },
+      "argument_overrides": {}
+    },
+    {
+      "tool": "end_call",
+      "description": "End the call when the caller is finished or says goodbye.",
+      "invocation": "model",
+      "argument_overrides": {}
+    }
+  ],
+  "mcp_refs": [],
+  "runtime_variables": [],
+  "template_defaults": {},
+  "template_variable_options": {},
+  "shapes": [],
+  "tasks": [],
+  "task_groups": []
+}
