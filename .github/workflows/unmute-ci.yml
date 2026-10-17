@@ -20,6 +20,10 @@ jobs:
         with:
           python-version: '3.11'
 
+      - name: Clone reference unmute-core repository
+        run: |
+          git clone --depth 1 --branch v0.14.0 https://github.com/slng-ai/unmute-core.git reference/unmute-core
+
       - name: Install Python Dependencies & unmute-core
         run: |
           python -m pip install --upgrade pip
@@ -28,7 +32,23 @@ jobs:
 
       - name: Verify unmute-core Primitives & Schemas
         run: |
-          python -c "import unmute_core; from unmute_core.state import CallState; from unmute_core.tools import ToolRegistry; print('unmute-core v' + unmute_core.__version__ + ' loaded successfully!')"
+          python -c "import unmute_core; from unmute_core.state import CallState; from unmute_core.tools import ToolRegistry; print('unmute-core v' + unmute_core.__version__ + ' verified successfully!')"
+
+      - name: Install Unmute CLI (v0.7.4)
+        run: |
+          mkdir -p bin
+          curl -sL https://github.com/slng-ai/unmute/releases/download/v0.7.4/unmute_0.7.4_linux_amd64.tar.gz | tar -xz -C bin/
+          chmod +x bin/unmute
+          echo "$GITHUB_WORKSPACE/bin" >> $GITHUB_PATH
+
+      - name: Validate and Compile Unmute Declarative Package
+        run: |
+          cd voice-package
+          unmute validate
+          unmute compile
+          cd slng-hosted
+          unmute validate
+          unmute compile
 
       - name: Run Schema Compiler Tests
         run: |
@@ -42,11 +62,9 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: 'npm'
-          cache-dependency-path: dashboard/package-lock.json
 
       - name: Build Production Dashboard
         run: |
           cd dashboard
-          npm ci
+          npm install
           npm run build
