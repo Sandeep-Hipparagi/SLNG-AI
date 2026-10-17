@@ -77,6 +77,20 @@ export default function App() {
       'Acid container leak in warehouse packaging bay. 12 workers evacuated upwind.',
   });
 
+  // Emergency protocol retrieved for the caller
+  const [emergencyProtocol, setEmergencyProtocol] = useState({
+    compliance_protocol: 'Sovereign Chemical Spill Containment & Evacuation Standard',
+    immediate_actions: [
+      '1. Evacuate upwind immediately at least 150 meters away from vapor or runoff.',
+      '2. Cover nose and mouth with damp cloth; isolate area and prevent electrical ignition.',
+    ],
+    triage_color_code: '#F97316',
+    urgency_level: 'critical',
+    incident_type: 'industrial_hazard',
+    retrieval_latency_ms: 1.8,
+  });
+  const [lastAudioUrl, setLastAudioUrl] = useState('');
+
   // Real benchmark numbers
   const [metrics, setMetrics] = useState({
     deployment_region: 'SLNG ap-south (India Sovereign Route in.api.slng.ai)',
@@ -136,8 +150,12 @@ export default function App() {
               setIncidentTicket(data.incident);
               setActiveAgent('compliance_specialist');
             }
+            if (data.event === 'protocol_fetched' && data.protocol) {
+              setEmergencyProtocol(data.protocol);
+            }
             if (data.event === 'live_voice_turn_completed') {
               if (data.incident) setIncidentTicket(data.incident);
+              if (data.protocol) setEmergencyProtocol(data.protocol);
               setActiveAgent('compliance_specialist');
             }
             if (data.metrics) {
@@ -270,9 +288,12 @@ export default function App() {
   };
 
   // Trigger Live Voice Turn with Real Audio Playback
-  const handleTriggerLiveTurn = async (overrideUtterance = null) => {
+  const handleTriggerLiveTurn = async (overrideUtterance = null, overrideLang = null, overrideProvider = null) => {
     const textToSend = overrideUtterance || customUtterance;
     if (!textToSend.trim()) return;
+
+    const currentLang = overrideLang || languageCode;
+    const currentProvider = overrideProvider || voiceProvider;
 
     setIsLiveTurnRunning(true);
     setIsCalling(true);
@@ -295,8 +316,8 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           utterance: textToSend,
-          voice_provider: voiceProvider,
-          language_code: languageCode,
+          voice_provider: currentProvider,
+          language_code: currentLang,
           noise_db: noiseInjected ? 78.5 : 48.0,
         }),
       });
@@ -304,10 +325,13 @@ export default function App() {
       if (res.ok) {
         const turnData = await res.json();
 
-        // 1. Update ticket state
+        // 1. Update ticket & protocol state
         if (turnData.incident_ticket) {
           setIncidentTicket(turnData.incident_ticket);
           setActiveAgent('compliance_specialist');
+        }
+        if (turnData.emergency_protocol) {
+          setEmergencyProtocol(turnData.emergency_protocol);
         }
 
         // 2. Append agent response to transcript
@@ -331,6 +355,7 @@ export default function App() {
               ...prev.performance,
               slng_avg_stt_ms: turnData.timings.stt_ms,
               baseline_us_stt_ms: turnData.timings.baseline_us_stt_ms,
+              gemini_ttft_ms: turnData.timings.llm_ttft_ms,
               slng_avg_tts_first_byte_ms: turnData.timings.tts_latency_ms,
               slng_avg_e2e_turn_ms: turnData.timings.e2e_turn_ms,
               baseline_us_e2e_turn_ms: turnData.timings.baseline_us_e2e_ms,
@@ -339,26 +364,18 @@ export default function App() {
           }));
         }
 
-        // 4. Play real synthesized audio through browser speaker
+        // 4. Play real synthesized audio through HTML5 audio element
         if (turnData.audio_base64) {
+          setLastAudioUrl(turnData.audio_base64);
           if (activeAudioRef.current) {
-            activeAudioRef.current.pause();
+            activeAudioRef.current.src = turnData.audio_base64;
+            setIsPlayingAudio(true);
+            activeAudioRef.current.play().catch((e) => {
+              console.warn('Audio playback caught:', e);
+              setIsPlayingAudio(false);
+              setIsCalling(false);
+            });
           }
-          const audio = new Audio(turnData.audio_base64);
-          activeAudioRef.current = audio;
-          setIsPlayingAudio(true);
-          audio.onended = () => {
-            setIsPlayingAudio(false);
-            setIsCalling(false);
-          };
-          audio.onerror = () => {
-            setIsPlayingAudio(false);
-            setIsCalling(false);
-          };
-          await audio.play().catch(() => {
-            setIsPlayingAudio(false);
-            setIsCalling(false);
-          });
         } else {
           setIsCalling(false);
         }
@@ -397,28 +414,39 @@ export default function App() {
 
         {/* Live Provider Readiness Badges */}
         <div className="flex items-center gap-2 flex-wrap">
-          <div className="hidden xl:flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-slate-900 border border-slate-800 text-[11px]">
-            <span className="h-2 w-2 rounded-full bg-emerald-400" />
-            <span className="text-slate-400">SLNG:</span>
-            <span className="text-slate-200 font-medium">ap-south</span>
+          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 border border-emerald-500/30 text-xs shadow-sm">
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-400 shadow-[0_0_8px_#10b981]"></span>
+            </span>
+            <span className="text-slate-200 font-semibold">SLNG Sovereign</span>
+            <span className="text-[10px] text-emerald-400 font-mono">(in.api.slng.ai)</span>
           </div>
 
-          <div className="hidden xl:flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-slate-900 border border-slate-800 text-[11px]">
-            <span className="h-2 w-2 rounded-full bg-emerald-400" />
-            <span className="text-slate-400">Sarvam:</span>
-            <span className="text-slate-200 font-medium">bulbul:v3</span>
+          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 border border-emerald-500/30 text-xs shadow-sm">
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-400 shadow-[0_0_8px_#10b981]"></span>
+            </span>
+            <span className="text-slate-200 font-semibold">Sarvam AI</span>
+            <span className="text-[10px] text-emerald-400 font-mono">(Bulbul v3 / Saaras)</span>
           </div>
 
-          <div className="hidden xl:flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-slate-900 border border-slate-800 text-[11px]">
-            <span className="h-2 w-2 rounded-full bg-emerald-400" />
-            <span className="text-slate-400">Gnani:</span>
-            <span className="text-slate-200 font-medium">Timbre 8kHz</span>
+          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 border border-emerald-500/30 text-xs shadow-sm">
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-400 shadow-[0_0_8px_#10b981]"></span>
+            </span>
+            <span className="text-slate-200 font-semibold">Gnani AI</span>
+            <span className="text-[10px] text-emerald-400 font-mono">(Prisma v2.5 / Timbre)</span>
           </div>
 
-          <div className="hidden xl:flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-slate-900 border border-slate-800 text-[11px]">
-            <span className="h-2 w-2 rounded-full bg-emerald-400" />
-            <span className="text-slate-400">Gemini:</span>
-            <span className="text-slate-200 font-medium">2.5 Flash</span>
+          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 border border-emerald-500/30 text-xs shadow-sm">
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-400 shadow-[0_0_8px_#10b981]"></span>
+            </span>
+            <span className="text-slate-200 font-semibold">Google Gemini 2.5 Flash</span>
           </div>
 
           <div className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-xs">
@@ -464,64 +492,52 @@ export default function App() {
               <div className="mt-4 p-3.5 rounded-xl bg-slate-950/70 border border-slate-800 space-y-3">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
-                    <Cpu className="h-3.5 w-3.5 text-cyan-400" /> Voice Provider Hot-Swap:
+                    <Cpu className="h-3.5 w-3.5 text-cyan-400" /> Sovereign Provider Switcher:
                   </span>
                   <span className="text-[10px] px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-300 font-mono">
-                    Zero-Downtime
+                    Zero-Downtime Hot-Swap
                   </span>
                 </div>
 
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-3 gap-2">
                   <button
                     onClick={() => setVoiceProvider('slng-sarvam')}
                     className={`p-2 rounded-lg border text-left text-xs transition-all cursor-pointer ${
                       voiceProvider === 'slng-sarvam'
-                        ? 'bg-cyan-950/40 border-cyan-500 text-cyan-200 shadow-sm'
+                        ? 'bg-cyan-950/50 border-cyan-500 text-cyan-200 shadow-sm ring-1 ring-cyan-500/30'
                         : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200'
                     }`}
                   >
-                    <div className="font-semibold text-white">SLNG + Sarvam</div>
-                    <div className="text-[10px] text-slate-400">bulbul:v3 (24kHz)</div>
+                    <div className="font-semibold text-white truncate">SLNG + Sarvam</div>
+                    <div className="text-[10px] text-cyan-400">Bulbul v3 (24kHz)</div>
                   </button>
 
                   <button
                     onClick={() => setVoiceProvider('slng-gnani')}
                     className={`p-2 rounded-lg border text-left text-xs transition-all cursor-pointer ${
                       voiceProvider === 'slng-gnani'
-                        ? 'bg-cyan-950/40 border-cyan-500 text-cyan-200 shadow-sm'
+                        ? 'bg-cyan-950/50 border-cyan-500 text-cyan-200 shadow-sm ring-1 ring-cyan-500/30'
                         : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200'
                     }`}
                   >
-                    <div className="font-semibold text-white">SLNG + Gnani</div>
-                    <div className="text-[10px] text-slate-400">Timbre v2.5 (8kHz)</div>
+                    <div className="font-semibold text-white truncate">SLNG + Gnani</div>
+                    <div className="text-[10px] text-cyan-400">Timbre v2.5 (8kHz)</div>
                   </button>
 
                   <button
-                    onClick={() => setVoiceProvider('cartesia-sonic')}
+                    onClick={() => setVoiceProvider('slng-cartesia')}
                     className={`p-2 rounded-lg border text-left text-xs transition-all cursor-pointer ${
-                      voiceProvider === 'cartesia-sonic'
-                        ? 'bg-cyan-950/40 border-cyan-500 text-cyan-200 shadow-sm'
+                      voiceProvider === 'slng-cartesia'
+                        ? 'bg-cyan-950/50 border-cyan-500 text-cyan-200 shadow-sm ring-1 ring-cyan-500/30'
                         : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200'
                     }`}
                   >
-                    <div className="font-semibold text-white">SLNG + Cartesia</div>
-                    <div className="text-[10px] text-slate-400">Sonic 3 (ap-south)</div>
-                  </button>
-
-                  <button
-                    onClick={() => setVoiceProvider('sarvam-direct')}
-                    className={`p-2 rounded-lg border text-left text-xs transition-all cursor-pointer ${
-                      voiceProvider === 'sarvam-direct'
-                        ? 'bg-cyan-950/40 border-cyan-500 text-cyan-200 shadow-sm'
-                        : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200'
-                    }`}
-                  >
-                    <div className="font-semibold text-white">Sarvam Direct</div>
-                    <div className="text-[10px] text-slate-400">api.sarvam.ai</div>
+                    <div className="font-semibold text-white truncate">SLNG + Cartesia</div>
+                    <div className="text-[10px] text-cyan-400">Sonic 3 (ap-south)</div>
                   </button>
                 </div>
 
-                {/* Language Picker */}
+                {/* Target Language Picker */}
                 <div className="flex items-center justify-between pt-1">
                   <span className="text-[11px] text-slate-400">Target Language:</span>
                   <select
@@ -539,6 +555,18 @@ export default function App() {
 
               {/* Waveform Visualizer & Audio Player Indicator */}
               <div className="mt-4 bg-slate-950/80 border border-slate-800/90 rounded-xl p-4 flex flex-col items-center justify-center relative overflow-hidden">
+                <audio
+                  ref={activeAudioRef}
+                  onPlay={() => setIsPlayingAudio(true)}
+                  onEnded={() => {
+                    setIsPlayingAudio(false);
+                    setIsCalling(false);
+                  }}
+                  onError={() => {
+                    setIsPlayingAudio(false);
+                    setIsCalling(false);
+                  }}
+                />
                 <div className="w-full flex items-center justify-between text-xs text-slate-400 mb-2">
                   <span className="flex items-center gap-1.5">
                     {isPlayingAudio ? (
@@ -548,18 +576,34 @@ export default function App() {
                     )}
                     {isPlayingAudio ? 'Audio Playing (Browser Speaker)' : 'Input Waveform (48 kHz PCM)'}
                   </span>
-                  <span className="flex items-center gap-1.5">
-                    <span
-                      className={`h-2 w-2 rounded-full ${
-                        isPlayingAudio
-                          ? 'bg-emerald-400 animate-ping'
-                          : isCalling
-                          ? 'bg-cyan-400 animate-ping'
-                          : 'bg-slate-600'
-                      }`}
-                    />
-                    {isPlayingAudio ? 'Speaking' : isCalling ? 'Processing' : 'Standby'}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    {lastAudioUrl && (
+                      <button
+                        onClick={() => {
+                          if (activeAudioRef.current) {
+                            activeAudioRef.current.currentTime = 0;
+                            activeAudioRef.current.play();
+                            setIsPlayingAudio(true);
+                          }
+                        }}
+                        className="text-[10px] text-cyan-400 hover:text-cyan-300 font-semibold px-2 py-0.5 rounded bg-cyan-500/10 border border-cyan-500/30 cursor-pointer"
+                      >
+                        Replay Audio
+                      </button>
+                    )}
+                    <span className="flex items-center gap-1.5">
+                      <span
+                        className={`h-2 w-2 rounded-full ${
+                          isPlayingAudio
+                            ? 'bg-emerald-400 animate-ping'
+                            : isCalling
+                            ? 'bg-cyan-400 animate-ping'
+                            : 'bg-slate-600'
+                        }`}
+                      />
+                      {isPlayingAudio ? 'Speaking' : isCalling ? 'Processing' : 'Standby'}
+                    </span>
+                  </div>
                 </div>
                 <canvas
                   ref={canvasRef}
@@ -631,40 +675,80 @@ export default function App() {
                     </button>
                   </div>
 
-                  {/* Preset Scenarios */}
-                  <div className="grid grid-cols-3 gap-1.5">
+                  {/* 3 One-Click Presets */}
+                  <div className="space-y-1.5 pt-1">
+                    <div className="text-[11px] font-semibold text-slate-400 flex items-center justify-between">
+                      <span>Live Emergency Presets:</span>
+                      <span className="text-[10px] text-slate-500">One-click live turn</span>
+                    </div>
+
                     <button
                       onClick={() => {
                         const txt = 'Anna, Peenya Phase 2 factory alli gas leak aagide! My name is Rajesh, please send fire brigade fast!';
                         setCustomUtterance(txt);
                         setLanguageCode('kn-IN');
-                        handleTriggerLiveTurn(txt);
+                        setVoiceProvider('slng-sarvam');
+                        handleTriggerLiveTurn(txt, 'kn-IN', 'slng-sarvam');
                       }}
-                      className="px-2 py-1.5 rounded-lg bg-slate-950 border border-slate-800 hover:border-cyan-500/50 text-[10px] text-slate-300 text-left truncate cursor-pointer"
+                      className="w-full p-2.5 rounded-xl bg-slate-950 border border-slate-800 hover:border-cyan-500/60 text-left transition-all cursor-pointer group hover:bg-slate-900/60"
                     >
-                      🏭 Peenya Gas (Kannada)
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                          🏭 Preset 1: Peenya Industrial Gas Leak
+                        </span>
+                        <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+                          kn-IN / Sarvam
+                        </span>
+                      </div>
+                      <div className="text-[11px] text-slate-400 mt-0.5 line-clamp-1">
+                        Kanglish/Kannada Emergency (Peenya Phase 2 chemical/gas breach)
+                      </div>
                     </button>
+
                     <button
                       onClick={() => {
-                        const txt = 'Bhaiya urgent help chahiye! Major truck collision on 100 Feet Road Indiranagar near flyover, diesel leak ho raha hai!';
+                        const txt = 'Bhaiya urgent emergency hai! Silk Board Flyover par 3 gaadiyan aapas mein takra gayi hain, diesel leak ho raha hai aur traffic jam hai!';
                         setCustomUtterance(txt);
                         setLanguageCode('hi-IN');
-                        handleTriggerLiveTurn(txt);
+                        setVoiceProvider('slng-gnani');
+                        handleTriggerLiveTurn(txt, 'hi-IN', 'slng-gnani');
                       }}
-                      className="px-2 py-1.5 rounded-lg bg-slate-950 border border-slate-800 hover:border-cyan-500/50 text-[10px] text-slate-300 text-left truncate cursor-pointer"
+                      className="w-full p-2.5 rounded-xl bg-slate-950 border border-slate-800 hover:border-cyan-500/60 text-left transition-all cursor-pointer group hover:bg-slate-900/60"
                     >
-                      🚗 Indiranagar (Hinglish)
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                          🚗 Preset 2: Silk Board Collision
+                        </span>
+                        <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/30">
+                          hi-IN / Gnani
+                        </span>
+                      </div>
+                      <div className="text-[11px] text-slate-400 mt-0.5 line-clamp-1">
+                        Hinglish Traffic Accident (Multi-vehicle collision & spill on flyover)
+                      </div>
                     </button>
+
                     <button
                       onClick={() => {
-                        const txt = 'Security guard collapsed with chest pains at Whitefield ITPL gate, need urgent cardiac ambulance!';
+                        const txt = 'Emergency! An unauthorized transaction of 85,000 rupees was just debited from my account via UPI, please freeze my account and log cyber fraud immediately!';
                         setCustomUtterance(txt);
                         setLanguageCode('en-IN');
-                        handleTriggerLiveTurn(txt);
+                        setVoiceProvider('slng-cartesia');
+                        handleTriggerLiveTurn(txt, 'en-IN', 'slng-cartesia');
                       }}
-                      className="px-2 py-1.5 rounded-lg bg-slate-950 border border-slate-800 hover:border-cyan-500/50 text-[10px] text-slate-300 text-left truncate cursor-pointer"
+                      className="w-full p-2.5 rounded-xl bg-slate-950 border border-slate-800 hover:border-cyan-500/60 text-left transition-all cursor-pointer group hover:bg-slate-900/60"
                     >
-                      🏥 Cardiac (English)
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                          💳 Preset 3: UPI / Aadhaar Freeze Request
+                        </span>
+                        <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-cyan-500/10 text-cyan-400 border border-cyan-500/30">
+                          en-IN / Cartesia
+                        </span>
+                      </div>
+                      <div className="text-[11px] text-slate-400 mt-0.5 line-clamp-1">
+                        Financial/Cyber Fraud Triage (Immediate 1930 / NPCI account lien)
+                      </div>
                     </button>
                   </div>
                 </div>
@@ -849,6 +933,44 @@ export default function App() {
                 </span>
               </div>
             </div>
+
+            {/* Real-Time Emergency Protocol SOP Card */}
+            {emergencyProtocol && (
+              <div className="mt-3 p-3.5 rounded-xl bg-slate-950/90 border border-slate-800 shadow-lg">
+                <div className="flex items-center justify-between pb-2 border-b border-slate-800/80 text-xs">
+                  <div className="flex items-center gap-2">
+                    <ShieldCheck
+                      className="h-4 w-4"
+                      style={{ color: emergencyProtocol.triage_color_code || '#F97316' }}
+                    />
+                    <span className="font-bold text-white">Sovereign Compliance SOP</span>
+                  </div>
+                  <span
+                    className="font-mono px-2 py-0.5 rounded text-[10px] font-bold"
+                    style={{
+                      backgroundColor: `${emergencyProtocol.triage_color_code || '#F97316'}20`,
+                      color: emergencyProtocol.triage_color_code || '#F97316',
+                    }}
+                  >
+                    &lt;50ms Protocol SLA ({emergencyProtocol.retrieval_latency_ms || 1.8}ms)
+                  </span>
+                </div>
+
+                <div className="mt-2 text-xs">
+                  <div className="text-[11px] font-semibold text-slate-300">
+                    {emergencyProtocol.compliance_protocol}
+                  </div>
+                  <div className="mt-1.5 space-y-1">
+                    {emergencyProtocol.immediate_actions?.map((action, idx) => (
+                      <div key={idx} className="text-[11px] text-slate-400 flex items-start gap-1.5">
+                        <span className="text-cyan-400 shrink-0">•</span>
+                        <span>{action}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </section>
 

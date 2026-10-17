@@ -153,7 +153,10 @@ def _heuristic_triage_fallback(transcript: str, language_code: str) -> Dict[str,
     elif any(k in text_lower for k in ["accident", "collision", "truck", "car", "flyover", "road", "bike"]):
         inc_type = "traffic_accident"
         urgency = "high"
-    elif any(k in text_lower for k in ["ambulance", "heart", "unconscious", "bleeding", "doctor", "hospital"]):
+    elif any(k in text_lower for k in ["fraud", "upi", "aadhaar", "transaction", "debited", "freeze", "cyber", "otp"]):
+        inc_type = "public_safety"
+        urgency = "critical"
+    elif any(k in text_lower for k in ["ambulance", "heart", "unconscious", "bleeding", "doctor", "hospital", "cardiac"]):
         inc_type = "medical_emergency"
         urgency = "critical"
     elif any(k in text_lower for k in ["fire", "blaze", "smoke", "cylinder"]):
@@ -185,6 +188,9 @@ def _heuristic_triage_fallback(transcript: str, language_code: str) -> Dict[str,
     elif is_hindi:
         lang = "Hindi / Hinglish"
         spoken = f"नमस्ते {name}, आपातकालीन रिस्पॉन्स टीम को तुरंत रवाना कर दिया गया है। कृपया सुरक्षित दूरी बनाए रखें।"
+    elif any(k in text_lower for k in ["fraud", "upi", "aadhaar", "freeze"]):
+        lang = "Indian English"
+        spoken = "Emergency cyber fraud protocol 1930 initiated. Immediate NPCI settlement freeze and issuing bank alert have been dispatched."
     else:
         lang = "Indian English"
         spoken = f"Emergency teams have been dispatched to {location}. Please keep the line open and stay in a safe upwind area."
@@ -294,9 +300,12 @@ async def call_slng_or_gnani_tts(
         headers["x-gnani-api-key"] = GNANI_API_KEY
         headers["X-Speech-Engine"] = "gnani-timbre-v2.5-8khz-telephony"
         engine_label = "SLNG + Gnani AI (Timbre v2.5 / 8kHz Telephony)"
-    else:
+    elif "cartesia" in voice_provider or "sonic" in voice_provider:
         headers["X-Speech-Engine"] = "slng-cartesia-sonic-3"
-        engine_label = "SLNG Sovereign Execution Layer (Cartesia Sonic 3)"
+        engine_label = "SLNG + Cartesia Sonic 3 (ap-south sovereign route)"
+    else:
+        headers["X-Speech-Engine"] = "slng-hosted-indic"
+        engine_label = "SLNG Sovereign Execution Layer (in.api.slng.ai)"
 
     # Live Gateway ping to SLNG India Sovereign route
     slng_live = False

@@ -16,7 +16,7 @@ from providers import (
     call_slng_or_gnani_tts,
 )
 from slng_client import slng_client
-from state import create_call_state
+from state import create_call_state, IncidentRecord, EmergencyProtocolRecord
 from telemetry import telemetry, ws_manager
 from tools_adapter import triage_tool_registry
 
@@ -62,11 +62,11 @@ async def providers_status():
 async def live_voice_turn(payload: Dict[str, Any]):
     """Executes an interactive sovereign voice turn across real live APIs.
 
-    1. STT Phase: Measures in-region noise filtering & latency
-    2. LLM Phase: Live Gemini 2.5 Flash structured triage & tool invocation
-    3. Tool Phase: Native unmute_core.tools.ToolRegistry execution
-    4. TTS Phase: Live Sarvam AI bulbul:v3 / SLNG-Gnani synthesis with real playable audio
-    5. WebSocket Broadcast: Streams live telemetry to React dashboard
+    Step A: Update unmute_core CallState[SovereignTriageState] with session metadata.
+    Step B: Execute live Gemini 2.5 Flash (call_gemini_triage) and record real llm_ttft_ms.
+    Step C: Execute triage_tool_registry.call("verify_and_log_incident", ...) and "fetch_emergency_protocol" using unmute_core.tools.ToolRegistry.
+    Step D: Synthesize the voice response via live Sarvam Bulbul v3 / SLNG / Gnani (call_sarvam_tts / call_slng_or_gnani_tts) and record real tts_latency_ms.
+    Step E: Broadcast the live turn telemetry, extracted incident ticket, and audio payload over WebSocket (ws://localhost:8000/ws) and return the JSON + base64 audio to the frontend.
     """
     utterance = payload.get(
         "utterance",
@@ -77,18 +77,34 @@ async def live_voice_turn(payload: Dict[str, Any]):
     noise_db = float(payload.get("noise_db", 78.5))
     session_id = f"sess_{int(time.time()*1000)}"
 
+    # Step A: Update unmute_core CallState[SovereignTriageState] with session metadata
+    active_call_state.save({
+        "turns_count": active_call_state.values.turns_count + 1,
+        "incident_summary": utterance,
+        "active_agent": "intake_triage",
+        "handoff_completed": False,
+    })
+
     # 1. STT Phase: In-region sovereign noise cleanup (SLNG Deepgram Nova-3 / Gnani Prisma)
     slng_stt_ms = round(176.0 + random.uniform(6.0, 18.0), 1)
     baseline_stt_ms = round(365.0 + random.uniform(15.0, 30.0), 1)
     wer_slng = 6.8 if noise_db >= 75.0 else 4.2
     wer_baseline = 19.5 if noise_db >= 75.0 else 12.0
 
-    # 2. LLM Phase: Live Gemini 2.5 Flash Triage Reasoning
+    # Step B: Execute live Gemini 2.5 Flash (call_gemini_triage) and record real llm_ttft_ms
     gemini_res = await call_gemini_triage(utterance, language_code=language_code)
     extracted = gemini_res.get("extracted_slots", {})
     spoken_reply = gemini_res.get("spoken_reply", "First responders have been dispatched.")
 
-    # 3. Tool Execution Phase: unmute_core.tools.ToolRegistry
+    # Mutate CallState post-Gemini reasoning and trigger agent handoff
+    active_call_state.save({
+        "caller_name": extracted.get("caller_name", "Caller"),
+        "location": extracted.get("location", "Bengaluru"),
+        "active_agent": "compliance_specialist",
+        "handoff_completed": True,
+    })
+
+    # Step C: Execute triage_tool_registry.call("verify_and_log_incident", ...) and "fetch_emergency_protocol" using unmute_core.tools.ToolRegistry
     tool_args = {
         "caller_name": extracted.get("caller_name", "Caller"),
         "location": extracted.get("location", "Bengaluru"),
@@ -103,19 +119,38 @@ async def live_voice_turn(payload: Dict[str, Any]):
     )
     incident_dict = dict(tool_result) if hasattr(tool_result, "__iter__") else tool_result
 
-    # 4. TTS Phase: Synthesize vocal response across selected provider
+    proto_result = await triage_tool_registry.call(
+        "fetch_emergency_protocol",
+        {
+            "incident_type": extracted.get("incident_type", "industrial_hazard"),
+            "urgency_level": extracted.get("urgency_level", "critical"),
+        },
+        state=active_call_state,
+    )
+    proto_dict = dict(proto_result) if hasattr(proto_result, "__iter__") else proto_result
+
+    active_call_state.save({
+        "incident": tool_result if isinstance(tool_result, IncidentRecord) else IncidentRecord(**incident_dict),
+        "protocol": proto_result if isinstance(proto_result, EmergencyProtocolRecord) else EmergencyProtocolRecord(**proto_dict),
+    })
+
+    # Step D: Synthesize the voice response via live Sarvam Bulbul v3 / SLNG / Gnani (call_sarvam_tts / call_slng_or_gnani_tts) and record real tts_latency_ms
     if "sarvam" in voice_provider:
         tts_data = await call_sarvam_tts(spoken_reply, target_language_code=language_code)
     elif "gnani" in voice_provider:
         tts_data = await call_slng_or_gnani_tts(
             spoken_reply, session_id=session_id, voice_provider="slng-gnani", language_code=language_code
         )
+    elif "cartesia" in voice_provider or "sonic" in voice_provider:
+        tts_data = await call_slng_or_gnani_tts(
+            spoken_reply, session_id=session_id, voice_provider="slng-cartesia", language_code=language_code
+        )
     else:
         tts_data = await call_slng_or_gnani_tts(
-            spoken_reply, session_id=session_id, voice_provider="cartesia-sonic", language_code=language_code
+            spoken_reply, session_id=session_id, voice_provider=voice_provider, language_code=language_code
         )
 
-    # 5. Measure End-to-End Latency & Telemetry
+    # Measure End-to-End Latency & Telemetry
     e2e_turn_ms = round(slng_stt_ms + gemini_res["ttft_ms"] + tts_data["latency_ms"], 1)
     baseline_e2e_ms = round(
         baseline_stt_ms + (gemini_res["ttft_ms"] + 120.0) + (tts_data["latency_ms"] + 150.0), 1
@@ -125,24 +160,34 @@ async def live_voice_turn(payload: Dict[str, Any]):
     )
 
     telemetry.log_incident(incident_dict)
+    telemetry.log_event("protocol_fetched", proto_dict)
     telemetry.log_event("live_voice_turn", {
         "utterance": utterance,
         "incident": incident_dict,
+        "protocol": proto_dict,
         "spoken_reply": spoken_reply,
         "voice_provider": voice_provider,
         "e2e_turn_ms": e2e_turn_ms,
     })
 
-    # Broadcast event to connected React dashboard clients
-    await ws_manager.broadcast({
+    # Step E: Broadcast the live turn telemetry, extracted incident ticket, and audio payload over WebSocket (ws://localhost:8000/ws) and return the JSON + base64 audio to the frontend
+    turn_broadcast_event = {
         "event": "live_voice_turn_completed",
+        "session_id": session_id,
         "utterance": utterance,
         "incident": incident_dict,
+        "protocol": proto_dict,
+        "handoff_state": {
+            "active_agent": active_call_state.values.active_agent,
+            "handoff_completed": active_call_state.values.handoff_completed,
+            "turns_count": active_call_state.values.turns_count,
+        },
         "spoken_reply": spoken_reply,
         "audio_base64": tts_data["audio_base64"],
         "voice_provider": voice_provider,
         "timings": {
             "stt_ms": slng_stt_ms,
+            "baseline_us_stt_ms": baseline_stt_ms,
             "llm_ttft_ms": gemini_res["ttft_ms"],
             "tts_latency_ms": tts_data["latency_ms"],
             "e2e_turn_ms": e2e_turn_ms,
@@ -150,7 +195,8 @@ async def live_voice_turn(payload: Dict[str, Any]):
             "latency_reduction_percent": latency_reduction_percent,
         },
         "metrics": telemetry.get_metrics_summary(),
-    })
+    }
+    await ws_manager.broadcast(turn_broadcast_event)
 
     return {
         "success": True,
@@ -160,6 +206,12 @@ async def live_voice_turn(payload: Dict[str, Any]):
         "language_code": language_code,
         "extracted_slots": extracted,
         "incident_ticket": incident_dict,
+        "emergency_protocol": proto_dict,
+        "handoff_state": {
+            "active_agent": active_call_state.values.active_agent,
+            "handoff_completed": active_call_state.values.handoff_completed,
+            "turns_count": active_call_state.values.turns_count,
+        },
         "spoken_reply": spoken_reply,
         "audio_base64": tts_data["audio_base64"],
         "provider_info": {
@@ -289,6 +341,7 @@ async def run_benchmark(payload: Dict[str, Any] = None):
     return result
 
 
+@app.websocket("/ws")
 @app.websocket("/ws/telemetry")
 async def websocket_telemetry_endpoint(websocket: WebSocket):
     """WebSocket endpoint streaming live voice agent turns, handoffs, tool events, and benchmarks."""
