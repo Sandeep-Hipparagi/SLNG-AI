@@ -1,0 +1,149 @@
+{
+  "target": "livekit",
+  "provider": "livekit",
+  "version": "1.8.1",
+  "supported": {
+    "floor": "1.8.1",
+    "ceiling": "1.8.1",
+    "verified": "2026-09-13"
+  },
+  "entry_agent": "IntakeTriage",
+  "agents": [
+    "compliance_specialist",
+    "intake_triage"
+  ],
+  "generated_files": [
+    ".dockerignore",
+    ".env.example",
+    "Dockerfile",
+    "README.md",
+    "agent.py",
+    "agents.py",
+    "call.py",
+    "compile-report.json",
+    "compose.dev.yaml",
+    "prompts/__init__.py",
+    "prompts/compliance_specialist.md",
+    "prompts/intake_triage.md",
+    "pyproject.toml",
+    "settings.py",
+    "utils/__init__.py",
+    "utils/dev_metrics.py"
+  ],
+  "required_env": [
+    "FASTAPI_BACKEND_URL",
+    "GEMINI_API_KEY",
+    "GOOGLE_API_KEY",
+    "LIVEKIT_API_KEY",
+    "LIVEKIT_API_SECRET",
+    "LIVEKIT_URL",
+    "SLNG_API_KEY"
+  ],
+  "bindings": [
+    {
+      "target": "livekit",
+      "role": "listen",
+      "binding": {
+        "provider": "slng",
+        "model": "deepgram/nova:3",
+        "placement": "api",
+        "params": {
+          "world_part": "in"
+        }
+      }
+    },
+    {
+      "target": "livekit",
+      "role": "turn",
+      "binding": {
+        "provider": "livekit",
+        "model": "turn-detector-mini",
+        "placement": "api"
+      }
+    },
+    {
+      "target": "livekit",
+      "role": "speak",
+      "profile": "voice",
+      "binding": {
+        "provider": "slng",
+        "model": "cartesia/sonic:3",
+        "voice": "sonic-english",
+        "placement": "api",
+        "params": {
+          "world_part": "in"
+        }
+      }
+    },
+    {
+      "target": "livekit",
+      "role": "reason",
+      "profile": "reasoning",
+      "binding": {
+        "provider": "google",
+        "model": "gemini-2.5-flash",
+        "placement": "api"
+      }
+    }
+  ],
+  "sizing": [
+    {
+      "target": "livekit",
+      "metric": "workers",
+      "value": "20",
+      "status": "unbenchmarked",
+      "basis": "2026-07-15 conservative 1 session per worker/GPU; channels=realtime_audio"
+    },
+    {
+      "target": "livekit",
+      "metric": "gpus",
+      "value": "0",
+      "status": "unbenchmarked",
+      "basis": "2026-07-15 conservative 1 session per worker/GPU; channels=realtime_audio"
+    },
+    {
+      "target": "livekit",
+      "metric": "provider_concurrency_quota.realtime_audio",
+      "value": "10",
+      "status": "unbenchmarked",
+      "basis": "2026-07-15 conservative 1 session per worker/GPU; channels=realtime_audio"
+    },
+    {
+      "target": "livekit",
+      "metric": "provider_session_time_quota.realtime_audio",
+      "value": "50m0s",
+      "status": "unbenchmarked",
+      "basis": "2026-07-15 conservative 1 session per worker/GPU; channels=realtime_audio"
+    }
+  ],
+  "secrets": [
+    {
+      "name": "FASTAPI_BACKEND_URL",
+      "referenced_by": [
+        "tools/fetch_emergency_protocol.yaml webhook.url_env"
+      ]
+    },
+    {
+      "name": "GEMINI_API_KEY"
+    },
+    {
+      "name": "GOOGLE_API_KEY",
+      "referenced_by": [
+        "agent.yaml models think reasoning"
+      ]
+    },
+    {
+      "name": "SLNG_API_KEY",
+      "referenced_by": [
+        "agent.yaml models listen transcriber"
+      ]
+    }
+  ],
+  "notes": [
+    "listen: slng via slng.STT (livekit-plugins-slng\u003e=1.8.1, verified 2026-07-15)",
+    "reason: google via google.LLM (livekit-agents[google], verified 2026-09-14)",
+    "speak: slng via slng.TTS (livekit-plugins-slng\u003e=1.8.1, verified 2026-07-15)",
+    "turn role lowers to LiveKit Inference turn detection; its binding placement is advisory",
+    "turn pace balanced (silence 0.3s from the pace, closes at 1.6s)"
+  ]
+}

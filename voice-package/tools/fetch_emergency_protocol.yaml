@@ -1,0 +1,32 @@
+description: >-
+  Fetch immediate life safety, sovereign compliance, and first-responder dispatch protocols.
+  Returns actionable first-aid and safety instructions to read back to the caller in under 50ms.
+
+input:
+  type: object
+  properties:
+    incident_type:
+      type: string
+      enum:
+        - medical_emergency
+        - industrial_hazard
+        - public_safety
+        - traffic_accident
+        - infrastructure_failure
+      description: Category of incident
+    urgency_level:
+      type: string
+      enum:
+        - critical
+        - high
+        - medium
+        - low
+      description: Priority level of incident
+  required:
+    - incident_type
+
+webhook:
+  url_env: FASTAPI_BACKEND_URL
+  path: /api/tools/fetch-protocol
+
+announce: "Retrieving immediate sovereign emergency response protocols."

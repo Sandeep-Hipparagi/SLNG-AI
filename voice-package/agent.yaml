@@ -1,0 +1,81 @@
+version: 1
+name: sovereign-triage-agent
+entry_agent: intake_triage
+
+secrets:
+  - FASTAPI_BACKEND_URL
+  - GEMINI_API_KEY
+  - GOOGLE_API_KEY
+  - SLNG_API_KEY
+
+models:
+  think:
+    reasoning:
+      description: "Google Gemini 2.5 Flash for ultra-low TTFT reasoning and tool execution"
+      provider: google
+      model: "gemini-2.5-flash"
+  speak:
+    voice:
+      description: "SLNG Sovereign TTS Cartesia Sonic for natural low-latency voice"
+      provider: slng
+      model: "cartesia/sonic:3"
+      voice: "sonic-english"
+      params:
+        world_part: in
+  listen:
+    transcriber:
+      description: "SLNG Sovereign STT Deepgram Nova-3 optimized for noisy Indian/English speech"
+      provider: slng
+      model: "deepgram/nova:3"
+      params:
+        world_part: in
+  turn:
+    detector:
+      provider: livekit
+      model: turn-detector-mini
+
+agents:
+  intake_triage:
+    instructions: prompts/intake_triage.md
+    think: reasoning
+    speak: voice
+    handoffs:
+      - to_compliance_specialist
+
+  compliance_specialist:
+    instructions: prompts/compliance_specialist.md
+    think: reasoning
+    speak: voice
+    tools:
+      - verify_and_log_incident
+      - fetch_emergency_protocol
+      - end_call
+
+handoffs:
+  to_compliance_specialist:
+    to: compliance_specialist
+    when: "The caller has provided their name, location/city, and incident summary, and is ready for compliance assessment and emergency dispatch."
+    announce: "Connecting you now with our Sovereign Compliance Specialist for verification and dispatch."
+    context:
+      history: full
+
+tools:
+  - verify_and_log_incident
+  - fetch_emergency_protocol
+  - end_call
+
+conversation:
+  greeting:
+    speaks_first: agent
+    text: "Namaste. Sovereign Emergency and Compliance Dispatch. Please state your name, location, and what happened."
+  interruption:
+    enabled: true
+
+channels:
+  web:
+    kind: realtime_audio
+
+capacity:
+  peak_sessions: 10
+  max_sessions: 20
+  avg_session_duration: 5m

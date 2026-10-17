@@ -1,0 +1,44 @@
+description: >-
+  Verify regulatory compliance, incident severity, and log the emergency dispatch ticket.
+  Call this immediately once incident details and location are confirmed.
+
+input:
+  type: object
+  properties:
+    caller_name:
+      type: string
+      description: Name of the reporting caller
+    location:
+      type: string
+      description: City, district, or landmark in India (e.g., Koramangala Bengaluru, Mumbai, Delhi)
+    incident_type:
+      type: string
+      enum:
+        - medical_emergency
+        - industrial_hazard
+        - public_safety
+        - traffic_accident
+        - infrastructure_failure
+      description: Category of the incident
+    urgency_level:
+      type: string
+      enum:
+        - critical
+        - high
+        - medium
+        - low
+      description: Assessed urgency and triage tier
+    language_detected:
+      type: string
+      description: Spoken dialect or language (e.g., English, Hindi, Hinglish, Kannada)
+  required:
+    - caller_name
+    - location
+    - incident_type
+    - urgency_level
+
+webhook:
+  url_env: FASTAPI_BACKEND_URL
+  path: /api/tools/log-incident
+
+announce: "Logging incident ticket and initiating sovereign compliance checks."
