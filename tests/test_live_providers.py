@@ -208,7 +208,54 @@ def test_live_providers():
         "savings": f"-{audio_turn_data['timings']['latency_reduction_percent']}%",
     })
 
-    # 7. Wall-Clock Latency Scoreboard
+    # 7. SLNG Context Router Fast-Path (Turn 2 Caller Confirmation)
+    print("\n> STEP 7: Testing Turn 2 Caller Confirmation - SLNG Context Router Fast-Path (0 LLM Tokens)...")
+    payload_turn2 = {
+        "utterance": "Haudu Anna, dispatch confirm maadi, bega banni!",
+        "voice_provider": "slng-sarvam",
+        "language_code": "kn-IN",
+        "noise_db": 78.5,
+    }
+    turn2_res = client.post("/api/voice/live-turn", json=payload_turn2)
+    assert turn2_res.status_code == 200, f"Turn 2 fast-path failed: {turn2_res.text}"
+    turn2_data = turn2_res.json()
+
+    assert turn2_data["success"] is True
+    assert turn2_data["context_router_decision"] == "FAST_PATH_CACHE_HIT"
+    assert turn2_data["is_fast_path"] is True
+    assert turn2_data["timings"]["llm_ttft_ms"] <= 10.0
+    assert turn2_data["audio_quality_metrics"]["context_router_mode"] == "FAST_PATH_0_LLM_TOKENS"
+    assert turn2_data["audio_quality_metrics"]["session_llm_cost_reduction_pct"] == 100.0
+    assert len(turn2_data["audio_base64"]) > 500
+
+    print(f"  [OK] Context Router Decision: {turn2_data['context_router_decision']} (0 LLM TOKENS)")
+    print(f"  [OK] Fast-Path TTFT: {turn2_data['timings']['llm_ttft_ms']}ms (vs ~142ms heavy LLM)")
+    print(f"  [OK] Preserved Incident Ticket: {turn2_data['incident_ticket']['ticket_number']}")
+    print(f"  [OK] Fast-Path Reply: {turn2_data['spoken_reply']}")
+    print(f"  [OK] E2E Fast-Path Turn: {turn2_data['timings']['e2e_turn_ms']}ms (Savings: -{turn2_data['timings']['latency_reduction_percent']}%)")
+    print(f"  [OK] Audio Quality SNR Gain: {turn2_data['audio_quality_metrics']['snr_gain_db']} (WER: {turn2_data['audio_quality_metrics']['after_slng_wer_pct']}%)")
+
+    latency_table.append({
+        "scenario": "Turn 2 Fast-Path (0 LLM)",
+        "stt_ms": turn2_data["timings"]["stt_ms"],
+        "ttft_ms": turn2_data["timings"]["llm_ttft_ms"],
+        "tts_ms": turn2_data["timings"]["tts_latency_ms"],
+        "e2e_slng_ms": turn2_data["timings"]["e2e_turn_ms"],
+        "e2e_us_ms": turn2_data["timings"]["baseline_us_e2e_ms"],
+        "savings": f"-{turn2_data['timings']['latency_reduction_percent']}%",
+    })
+
+    # 8. Multi-Turn Session Reset (POST /api/session/reset)
+    print("\n> STEP 8: Testing Multi-Turn Session Reset (POST /api/session/reset)...")
+    reset_res = client.post("/api/session/reset")
+    assert reset_res.status_code == 200, f"Reset failed: {reset_res.text}"
+    reset_data = reset_res.json()
+    assert reset_data["success"] is True
+    assert reset_data["turns_count"] == 0
+    assert reset_data["active_agent"] == "intake_triage"
+    print("  [OK] Session and CallState cleanly reset to Turn #0")
+
+    # 9. Wall-Clock Latency Scoreboard
     print("\n" + "=" * 76)
     print("  WALL-CLOCK REAL LATENCY BENCHMARK SCOREBOARD (SOVEREIGN vs US-EAST)")
     print("=" * 76)
@@ -217,7 +264,7 @@ def test_live_providers():
     for row in latency_table:
         print(f"  {row['scenario']:<28} | {row['stt_ms']:>5.1f}ms | {row['ttft_ms']:>5.1f}ms | {row['tts_ms']:>5.1f}ms | {row['e2e_slng_ms']:>8.1f}ms | {row['e2e_us_ms']:>8.1f}ms | {row['savings']:>7}")
     print("=" * 76)
-    print("  [SUCCESS 100%] ALL LIVE PRESETS, LIVE MIC STT, BARGE-IN & TTS VERIFIED!\n")
+    print("  [SUCCESS 100%] ALL LIVE PRESETS, CONTEXT ROUTER FAST-PATH, AUDIO QUALITY & RESET VERIFIED!\n")
 
 
 if __name__ == "__main__":
