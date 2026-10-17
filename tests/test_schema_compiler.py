@@ -28,14 +28,17 @@ def run_cmd(cmd: list[str], cwd: Path) -> subprocess.CompletedProcess:
 
 def main():
     root_dir = Path(__file__).resolve().parent.parent
-    unmute_bin = root_dir / "bin" / "unmute.exe"
-    if not unmute_bin.exists():
+    if sys.platform == "win32":
+        unmute_bin = root_dir / "bin" / "unmute.exe"
+        if not unmute_bin.exists():
+            unmute_bin = root_dir / "bin" / "unmute"
+    else:
         unmute_bin = root_dir / "bin" / "unmute"
-    if not unmute_bin.exists():
-        import shutil
-        which_unmute = shutil.which("unmute")
-        if which_unmute:
-            unmute_bin = Path(which_unmute)
+        if not unmute_bin.exists():
+            import shutil
+            which_unmute = shutil.which("unmute")
+            if which_unmute:
+                unmute_bin = Path(which_unmute)
 
     voice_pkg_dir = root_dir / "voice-package"
     slng_hosted_dir = voice_pkg_dir / "slng-hosted"
