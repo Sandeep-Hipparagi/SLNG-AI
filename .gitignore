@@ -20,3 +20,6 @@ dashboard/dist/
 # OS files
 Thumbs.db
 .DS_Store
+
+# Cloned reference repos
+reference/

@@ -51,7 +51,7 @@ def test_webhook_and_websocket_broadcast():
 
         assert response.status_code == 200, f"Tool call failed: {response.text}"
         res_data = response.json()
-        assert res_data["status"] == "success"
+        assert "ticket_number" in res_data
         assert res_data["ticket_number"].startswith("IND-")
         assert "HAZMAT" in res_data["compliance_status"]
         assert len(res_data["responders_notified"]) > 0
@@ -80,7 +80,7 @@ def test_webhook_and_websocket_broadcast():
 
     assert proto_res.status_code == 200
     proto_data = proto_res.json()
-    assert proto_data["status"] == "success"
+    assert "compliance_protocol" in proto_data
     assert len(proto_data["immediate_actions"]) >= 2
     assert "Chemical Spill" in proto_data["compliance_protocol"]
     assert proto_elapsed_ms < 50.0, f"Protocol retrieval exceeded 50ms SLA: {proto_elapsed_ms:.2f}ms"

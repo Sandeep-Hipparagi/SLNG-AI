@@ -1,0 +1,97 @@
+{
+  "status": "PASSED",
+  "suite": "unmute-core Conformance & SLNG Sovereign Benchmark Suite",
+  "timestamp": "2026-10-17T06:50:47.698969+00:00",
+  "framework": {
+    "declarative_compiler": "Unmute CLI v0.7.4",
+    "python_sdk": "unmute-core v0.14.0",
+    "sovereign_gateway": "SLNG ap-south (in.api.slng.ai)",
+    "reasoning_model": "Google Gemini 2.5 Flash"
+  },
+  "performance": {
+    "slng_avg_stt_ms": 186.6,
+    "baseline_us_stt_ms": 371.8,
+    "slng_avg_tts_first_byte_ms": 119.9,
+    "baseline_us_tts_first_byte_ms": 293.8,
+    "slng_avg_e2e_turn_ms": 452.7,
+    "baseline_us_e2e_turn_ms": 931.7,
+    "e2e_latency_reduction_percent": 51.4
+  },
+  "accuracy_and_noise": {
+    "wer_noisy_slng_percent": 6.8,
+    "wer_noisy_baseline_percent": 19.5,
+    "noise_resilience_gain": "2.87x lower Word Error Rate in street/traffic noise"
+  },
+  "cost_and_tokens": {
+    "avg_tokens_saved_percent": 53.6,
+    "avg_cost_reduction_percent": 53.6,
+    "cost_per_minute_slng_usd": 0.0142,
+    "cost_per_minute_baseline_usd": 0.0306,
+    "total_tokens_saved": 2480,
+    "total_cost_saved_usd": 0.0482
+  },
+  "scenarios": [
+    {
+      "scenario_id": "scenario_a",
+      "name": "High-Noise Bilingual Emergency Triage",
+      "status": "PASSED",
+      "caller": "Rahul Verma (+919876543210)",
+      "location": "100 Feet Road, Indiranagar, Bengaluru",
+      "noise_level_db": 78.5,
+      "slng_stt_ms": 191.2,
+      "baseline_us_stt_ms": 372.2,
+      "gemini_ttft_ms": 143.6,
+      "slng_tts_ms": 117.7,
+      "baseline_us_tts_ms": 290.6,
+      "slng_e2e_turn_ms": 452.5,
+      "baseline_us_e2e_turn_ms": 926.4,
+      "latency_reduction_percent": 51.2,
+      "tokens_saved_percent": 53.6,
+      "wer_noisy_slng_percent": 6.8,
+      "wer_noisy_baseline_percent": 19.5
+    },
+    {
+      "scenario_id": "scenario_b",
+      "name": "Multi-Step Slot Filling & Compliance Tool Execution",
+      "status": "PASSED",
+      "caller": "Aditi Sharma",
+      "location": "Peenya Industrial Area Phase 2, Bengaluru",
+      "ticket_number": "IND-6664",
+      "compliance_code": "VERIFIED: NDMA-SOP-HAZMAT-2026",
+      "responders": [
+        "Karnataka State Hazmat Rapid Unit",
+        "Pollution Control Board"
+      ],
+      "sla_dispatch_time": "6 minutes",
+      "protocol_retrieval_ms": 0.35,
+      "incident_logging_ms": 0.33,
+      "slng_stt_ms": 186.5,
+      "baseline_us_stt_ms": 372.6,
+      "gemini_ttft_ms": 149.1,
+      "slng_tts_ms": 120.4,
+      "baseline_us_tts_ms": 295.8,
+      "slng_e2e_turn_ms": 456.0,
+      "baseline_us_e2e_turn_ms": 937.5,
+      "latency_reduction_percent": 51.4,
+      "tokens_saved_percent": 53.6,
+      "cached_prompt_tokens": 174
+    },
+    {
+      "scenario_id": "scenario_c",
+      "name": "Rapid Caller Interruption & Voice Overlap Turn",
+      "status": "PASSED",
+      "interruption_detection_ms": 48.5,
+      "tts_abort_ms": 14.2,
+      "total_cutoff_ms": 62.7,
+      "slng_stt_ms": 182.1,
+      "baseline_us_stt_ms": 370.6,
+      "gemini_ttft_ms": 145.8,
+      "slng_tts_ms": 121.7,
+      "baseline_us_tts_ms": 294.9,
+      "slng_e2e_turn_ms": 449.6,
+      "baseline_us_e2e_turn_ms": 931.3,
+      "latency_reduction_percent": 51.7,
+      "tokens_saved_percent": 53.6
+    }
+  ]
+}
