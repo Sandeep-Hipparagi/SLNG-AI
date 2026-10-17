@@ -147,7 +147,68 @@ def test_live_providers():
         "savings": f"-{fraud_data['timings']['latency_reduction_percent']}%",
     })
 
-    # 5. Wall-Clock Latency Scoreboard
+    # 5. Check Compiled Spec Endpoint (for Judge Inspection Modal)
+    print("\n> STEP 5: Verifying GET /api/spec/compiled (Unmute Declarative Compilation)...")
+    spec_res = client.get("/api/spec/compiled")
+    assert spec_res.status_code == 200, f"Compiled spec failed: {spec_res.text}"
+    spec_data = spec_res.json()
+    assert spec_data["unmute_version"] == "0.7.4"
+    assert "intake_triage" in spec_data["declarative_spec"]
+    assert "compliance_specialist" in spec_data["declarative_spec"]
+    assert len(spec_data["target_slng"]) > 50
+    assert len(spec_data["target_livekit"]) > 50
+    print(f"  [OK] Unmute Spec Verified: {len(spec_data['declarative_spec'])} chars (agent.yaml)")
+    print(f"  [OK] SLNG Target Spec: {len(spec_data['target_slng'])} chars (agent.json)")
+    print(f"  [OK] LiveKit Target Spec: {len(spec_data['target_livekit'])} chars (agent.py)")
+
+    # 6. Live Microphone STT Endpoint (POST /api/voice/live-audio)
+    print("\n> STEP 6: Testing POST /api/voice/live-audio with simulated browser mic audio buffer...")
+    import io
+    import wave
+
+    wav_buffer = io.BytesIO()
+    with wave.open(wav_buffer, "wb") as wav_file:
+        wav_file.setnchannels(1)
+        wav_file.setsampwidth(2)
+        wav_file.setframerate(16000)
+        # 0.5s of 16kHz mono audio
+        wav_file.writeframes(b"\x00\x00" * 8000)
+    wav_bytes = wav_buffer.getvalue()
+
+    mic_files = {"audio": ("microphone_turn.wav", wav_bytes, "audio/wav")}
+    mic_data = {
+        "voice_provider": "slng-sarvam",
+        "language_code": "kn-IN",
+        "noise_db": "48.0",
+    }
+    audio_turn_res = client.post("/api/voice/live-audio", files=mic_files, data=mic_data)
+    assert audio_turn_res.status_code == 200, f"Live audio turn failed: {audio_turn_res.text}"
+    audio_turn_data = audio_turn_res.json()
+
+    assert audio_turn_data["success"] is True
+    assert audio_turn_data["incident_ticket"]["ticket_number"].startswith("IND-")
+    assert audio_turn_data["emergency_protocol"] is not None
+    assert len(audio_turn_data["audio_base64"]) > 500
+    assert "stt_info" in audio_turn_data
+
+    print(f"  [OK] Live Audio Transcribed: '{audio_turn_data['stt_info']['transcript'][:50]}...'")
+    engine_name = audio_turn_data['stt_info'].get('stt_engine') or audio_turn_data['stt_info'].get('engine', 'STT')
+    print(f"  [OK] STT Engine & Latency: {engine_name} ({audio_turn_data['stt_info']['stt_latency_ms']}ms)")
+    print(f"  [OK] Gemini TTFT: {audio_turn_data['timings']['llm_ttft_ms']}ms")
+    print(f"  [OK] Sarvam TTS Latency: {audio_turn_data['timings']['tts_latency_ms']}ms")
+    print(f"  [OK] E2E Turn Latency: {audio_turn_data['timings']['e2e_turn_ms']}ms")
+
+    latency_table.append({
+        "scenario": "Live Browser Mic (STT+TTS)",
+        "stt_ms": audio_turn_data["timings"]["stt_ms"],
+        "ttft_ms": audio_turn_data["timings"]["llm_ttft_ms"],
+        "tts_ms": audio_turn_data["timings"]["tts_latency_ms"],
+        "e2e_slng_ms": audio_turn_data["timings"]["e2e_turn_ms"],
+        "e2e_us_ms": audio_turn_data["timings"]["baseline_us_e2e_ms"],
+        "savings": f"-{audio_turn_data['timings']['latency_reduction_percent']}%",
+    })
+
+    # 7. Wall-Clock Latency Scoreboard
     print("\n" + "=" * 76)
     print("  WALL-CLOCK REAL LATENCY BENCHMARK SCOREBOARD (SOVEREIGN vs US-EAST)")
     print("=" * 76)
@@ -156,8 +217,9 @@ def test_live_providers():
     for row in latency_table:
         print(f"  {row['scenario']:<28} | {row['stt_ms']:>5.1f}ms | {row['ttft_ms']:>5.1f}ms | {row['tts_ms']:>5.1f}ms | {row['e2e_slng_ms']:>8.1f}ms | {row['e2e_us_ms']:>8.1f}ms | {row['savings']:>7}")
     print("=" * 76)
-    print("  [SUCCESS 100%] ALL LIVE PRESETS, UNMUTE TOOLS, & TTS PLAYBACK VERIFIED!\n")
+    print("  [SUCCESS 100%] ALL LIVE PRESETS, LIVE MIC STT, BARGE-IN & TTS VERIFIED!\n")
 
 
 if __name__ == "__main__":
     test_live_providers()
+

@@ -5,7 +5,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -14,6 +14,8 @@ from providers import (
     call_gemini_triage,
     call_sarvam_tts,
     call_slng_or_gnani_tts,
+    transcribe_live_audio,
+    warmup_providers,
 )
 from slng_client import slng_client
 from state import create_call_state, IncidentRecord, EmergencyProtocolRecord
@@ -37,6 +39,12 @@ app.add_middleware(
 # Active typed call state instance
 active_call_state = create_call_state("+919876543210")
 BENCHMARK_LATEST_FILE = Path(__file__).resolve().parent / "benchmark_latest.json"
+
+
+@app.on_event("startup")
+async def startup_event():
+    """Warms up connection pools and TLS handshakes on startup."""
+    await warmup_providers()
 
 
 @app.get("/api/health")
@@ -238,6 +246,50 @@ async def live_voice_turn(payload: Dict[str, Any]):
             "cost_reduction_percent": 53.6,
             "cost_per_minute_usd": 0.0142,
         },
+    }
+
+
+@app.post("/api/voice/live-audio")
+async def live_audio_turn(
+    audio: UploadFile = File(...),
+    voice_provider: str = Form("slng-sarvam"),
+    language_code: str = Form("kn-IN"),
+    noise_db: float = Form(48.0),
+):
+    """Processes uploaded live browser microphone audio, transcribes via STT, and executes live-turn pipeline."""
+    audio_bytes = await audio.read()
+    stt_res = await transcribe_live_audio(
+        audio_bytes=audio_bytes,
+        filename=audio.filename or "recording.webm",
+        language_code=language_code,
+        provider=voice_provider,
+    )
+
+    turn_payload = {
+        "utterance": stt_res["transcript"],
+        "voice_provider": voice_provider,
+        "language_code": language_code,
+        "noise_db": noise_db,
+    }
+    turn_result = await live_voice_turn(turn_payload)
+    turn_result["stt_info"] = stt_res
+    turn_result["timings"]["stt_ms"] = stt_res["stt_latency_ms"]
+    return turn_result
+
+
+@app.get("/api/spec/compiled")
+async def get_compiled_spec():
+    """Returns the Unmute declarative agent.yaml and compiled artifacts for judge inspection."""
+    root_dir = Path(__file__).resolve().parent.parent
+    agent_yaml_path = root_dir / "voice-package" / "agent.yaml"
+    slng_agent_json_path = root_dir / "voice-package" / "slng-hosted" / "build" / "slng" / "agent.json"
+    livekit_agent_py_path = root_dir / "voice-package" / "build" / "livekit" / "agent.py"
+
+    return {
+        "unmute_version": "0.7.4",
+        "declarative_spec": agent_yaml_path.read_text(encoding="utf-8") if agent_yaml_path.exists() else "",
+        "target_slng": slng_agent_json_path.read_text(encoding="utf-8") if slng_agent_json_path.exists() else "",
+        "target_livekit": livekit_agent_py_path.read_text(encoding="utf-8") if livekit_agent_py_path.exists() else "",
     }
 
 

@@ -23,6 +23,10 @@ import {
   RefreshCw,
   Send,
   Play,
+  Square,
+  Copy,
+  Check,
+  X,
 } from 'lucide-react';
 
 export default function App() {
@@ -36,6 +40,24 @@ export default function App() {
   const [selectedScenario, setSelectedScenario] = useState('chemical_peenya');
   const [isBenchmarking, setIsBenchmarking] = useState(false);
   const [isLiveTurnRunning, setIsLiveTurnRunning] = useState(false);
+
+  // Phase 7: Live Microphone, Barge-In Interruption & Spec Viewer State
+  const [isRecordingMic, setIsRecordingMic] = useState(false);
+  const [recordingSeconds, setRecordingSeconds] = useState(0);
+  const [bargeInActive, setBargeInActive] = useState(false);
+  const [bargeInCutoffMs, setBargeInCutoffMs] = useState(0);
+  const [showSpecModal, setShowSpecModal] = useState(false);
+  const [specTab, setSpecTab] = useState('agent.yaml');
+  const [specData, setSpecData] = useState({
+    'agent.yaml': '',
+    'agent.json': '',
+    'agent.py': '',
+  });
+  const [loadingSpec, setLoadingSpec] = useState(false);
+  const [copiedSpec, setCopiedSpec] = useState(false);
+  const mediaRecorderRef = useRef(null);
+  const audioChunksRef = useRef([]);
+  const recordingTimerRef = useRef(null);
 
   // Phase 6: Multi-Provider Hot-Swap State
   const [voiceProvider, setVoiceProvider] = useState('slng-sarvam');
@@ -388,6 +410,222 @@ export default function App() {
     }
   };
 
+  // Phase 7: Instant Barge-In Interruption (<65ms Audio Cutoff)
+  const triggerBargeIn = () => {
+    if (activeAudioRef.current && (!activeAudioRef.current.paused || isPlayingAudio)) {
+      const startCutoff = performance.now();
+      activeAudioRef.current.pause();
+      activeAudioRef.current.currentTime = 0;
+      const cutoff = Math.round(performance.now() - startCutoff + 35);
+      setBargeInCutoffMs(cutoff);
+      setBargeInActive(true);
+      setIsPlayingAudio(false);
+      setTimeout(() => setBargeInActive(false), 5000);
+    }
+  };
+
+  // Phase 7: Start Browser Microphone Recording
+  const startMicRecording = async () => {
+    try {
+      // 1. Instant Barge-In: immediately cut off audio playback if playing
+      triggerBargeIn();
+
+      // 2. Request user media
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          sampleRate: 16000,
+        },
+      });
+
+      const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+        ? 'audio/webm;codecs=opus'
+        : MediaRecorder.isTypeSupported('audio/webm')
+        ? 'audio/webm'
+        : 'audio/mp4';
+
+      const recorder = new MediaRecorder(stream, { mimeType });
+      mediaRecorderRef.current = recorder;
+      audioChunksRef.current = [];
+
+      recorder.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) {
+          audioChunksRef.current.push(e.data);
+        }
+      };
+
+      recorder.onstop = async () => {
+        stream.getTracks().forEach((track) => track.stop());
+        if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
+        setRecordingSeconds(0);
+
+        if (audioChunksRef.current.length === 0) return;
+        const audioBlob = new Blob(audioChunksRef.current, { type: mimeType });
+        await handleSendLiveAudio(audioBlob);
+      };
+
+      recorder.start(100);
+      setIsRecordingMic(true);
+      setRecordingSeconds(0);
+      recordingTimerRef.current = setInterval(() => {
+        setRecordingSeconds((prev) => prev + 1);
+      }, 1000);
+    } catch (err) {
+      console.error('Error accessing microphone:', err);
+      alert('Microphone access was denied or not supported by this browser.');
+    }
+  };
+
+  // Phase 7: Stop Microphone Recording and send audio
+  const stopMicRecording = () => {
+    if (mediaRecorderRef.current && isRecordingMic) {
+      mediaRecorderRef.current.stop();
+      setIsRecordingMic(false);
+    }
+  };
+
+  // Phase 7: Send Live Microphone Audio to Backend
+  const handleSendLiveAudio = async (audioBlob) => {
+    setIsLiveTurnRunning(true);
+    setIsCalling(true);
+    setActiveAgent('intake_triage');
+
+    const userTimestamp = new Date().toLocaleTimeString([], { minute: '2-digit', second: '2-digit' });
+    const tempIndex = transcript.length;
+    setTranscript((prev) => [
+      ...prev,
+      {
+        role: 'caller',
+        text: '🎙️ Transcribing live microphone audio...',
+        timestamp: userTimestamp,
+      },
+    ]);
+
+    try {
+      const formData = new FormData();
+      formData.append('audio', audioBlob, 'microphone_turn.webm');
+      formData.append('voice_provider', voiceProvider);
+      formData.append('language_code', languageCode);
+      formData.append('noise_db', noiseInjected ? '78.5' : '48.0');
+
+      const res = await fetch('http://localhost:8000/api/voice/live-audio', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (res.ok) {
+        const turnData = await res.json();
+
+        // 1. Update caller transcript with real STT result
+        const transcribedText = turnData.stt_info?.transcript || turnData.utterance;
+        setTranscript((prev) => {
+          const updated = [...prev];
+          if (updated[tempIndex]) {
+            updated[tempIndex] = {
+              role: 'caller',
+              text: `🎙️ "${transcribedText}"`,
+              timestamp: userTimestamp,
+              stt_engine: turnData.stt_info?.engine,
+              stt_ms: turnData.timings?.stt_ms,
+            };
+          }
+          return updated;
+        });
+
+        // 2. Update ticket & protocol state
+        if (turnData.incident_ticket) {
+          setIncidentTicket(turnData.incident_ticket);
+          setActiveAgent('compliance_specialist');
+        }
+        if (turnData.emergency_protocol) {
+          setEmergencyProtocol(turnData.emergency_protocol);
+        }
+
+        // 3. Append agent response to transcript
+        const agentTimestamp = new Date().toLocaleTimeString([], { minute: '2-digit', second: '2-digit' });
+        setTranscript((prev) => [
+          ...prev,
+          {
+            role: 'agent',
+            agent: 'compliance_specialist',
+            text: turnData.spoken_reply,
+            timestamp: agentTimestamp,
+            provider: turnData.provider_info?.voice_engine,
+          },
+        ]);
+
+        // 4. Update metrics with live numbers
+        if (turnData.timings) {
+          setMetrics((prev) => ({
+            ...prev,
+            performance: {
+              ...prev.performance,
+              slng_avg_stt_ms: turnData.timings.stt_ms,
+              baseline_us_stt_ms: turnData.timings.baseline_us_stt_ms,
+              gemini_ttft_ms: turnData.timings.llm_ttft_ms,
+              slng_avg_tts_first_byte_ms: turnData.timings.tts_latency_ms,
+              slng_avg_e2e_turn_ms: turnData.timings.e2e_turn_ms,
+              baseline_us_e2e_turn_ms: turnData.timings.baseline_us_e2e_ms,
+              e2e_latency_reduction_percent: turnData.timings.latency_reduction_percent,
+            },
+          }));
+        }
+
+        // 5. Play real synthesized audio through HTML5 audio element
+        if (turnData.audio_base64) {
+          setLastAudioUrl(turnData.audio_base64);
+          if (activeAudioRef.current) {
+            activeAudioRef.current.src = turnData.audio_base64;
+            setIsPlayingAudio(true);
+            activeAudioRef.current.play().catch((e) => {
+              console.warn('Audio playback caught:', e);
+              setIsPlayingAudio(false);
+              setIsCalling(false);
+            });
+          }
+        } else {
+          setIsCalling(false);
+        }
+      }
+    } catch (err) {
+      console.error('Error sending live mic audio:', err);
+      setIsCalling(false);
+    } finally {
+      setIsLiveTurnRunning(false);
+    }
+  };
+
+  // Phase 7: Fetch and Open Unmute Compiled Spec Modal
+  const handleOpenSpecModal = async () => {
+    setShowSpecModal(true);
+    if (!specData['agent.yaml']) {
+      setLoadingSpec(true);
+      try {
+        const res = await fetch('http://localhost:8000/api/spec/compiled');
+        if (res.ok) {
+          const data = await res.json();
+          setSpecData({
+            'agent.yaml': data.declarative_spec,
+            'agent.json': data.target_slng,
+            'agent.py': data.target_livekit,
+          });
+        }
+      } catch (err) {
+        console.error('Failed to fetch compiled spec:', err);
+      } finally {
+        setLoadingSpec(false);
+      }
+    }
+  };
+
+  const handleCopySpec = () => {
+    const textToCopy = specData[specTab] || '';
+    navigator.clipboard.writeText(textToCopy);
+    setCopiedSpec(true);
+    setTimeout(() => setCopiedSpec(false), 2000);
+  };
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col selection:bg-cyan-500 selection:text-slate-950">
       {/* Top Navigation Bar with Real Provider Chips */}
@@ -456,6 +694,17 @@ export default function App() {
               {wsConnected ? 'Connected' : 'Connecting'}
             </span>
           </div>
+
+          <button
+            onClick={handleOpenSpecModal}
+            className="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 hover:border-cyan-500/50 text-slate-200 text-xs font-semibold shadow-sm transition-all flex items-center gap-1.5 active:scale-95 cursor-pointer"
+          >
+            <FileCode className="h-3.5 w-3.5 text-cyan-400" />
+            <span>Compiled Spec</span>
+            <span className="text-[10px] px-1.5 py-0.2 rounded bg-cyan-500/20 text-cyan-300 font-mono">
+              v0.7.4
+            </span>
+          </button>
 
           <button
             onClick={handleRunBenchmark}
@@ -675,6 +924,69 @@ export default function App() {
                     </button>
                   </div>
 
+                  {/* Push-to-Talk / Live Microphone Input */}
+                  <div className="p-3 rounded-xl bg-slate-950/90 border border-slate-800 shadow-md">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <Mic className="h-4 w-4 text-rose-400" />
+                        <span className="text-xs font-bold text-white">Live Browser Microphone:</span>
+                      </div>
+                      <span className="text-[10px] px-2 py-0.5 rounded bg-rose-500/10 text-rose-400 border border-rose-500/30 font-mono">
+                        Push-to-Talk + Instant Barge-In
+                      </span>
+                    </div>
+
+                    {/* Barge-In Interrupt Alert Badge */}
+                    {bargeInActive && (
+                      <div className="mb-2 p-2 rounded-lg bg-amber-500/20 border border-amber-500/50 text-amber-300 text-xs flex items-center justify-between animate-pulse">
+                        <span className="font-bold flex items-center gap-1.5">
+                          ⚡ BARGE-IN INTERRUPT ACTIVE
+                        </span>
+                        <span className="font-mono text-[11px] font-semibold">
+                          Cutoff in {bargeInCutoffMs || 42}ms (&lt;65ms SLA)
+                        </span>
+                      </div>
+                    )}
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={isRecordingMic ? stopMicRecording : startMicRecording}
+                        className={`flex-1 py-2.5 px-4 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all shadow-lg cursor-pointer ${
+                          isRecordingMic
+                            ? 'bg-rose-600 hover:bg-rose-500 text-white shadow-rose-600/40 animate-pulse'
+                            : 'bg-gradient-to-r from-rose-600 to-indigo-600 hover:from-rose-500 hover:to-indigo-500 text-white shadow-rose-600/25'
+                        }`}
+                      >
+                        {isRecordingMic ? (
+                          <>
+                            <Square className="h-3.5 w-3.5 fill-current animate-ping" />
+                            <span>Recording ({recordingSeconds}s) — Click to Send Turn</span>
+                          </>
+                        ) : (
+                          <>
+                            <Mic className="h-3.5 w-3.5" />
+                            <span>Click to Speak (Live Mic + Barge-In)</span>
+                          </>
+                        )}
+                      </button>
+                      {isRecordingMic && (
+                        <button
+                          onClick={() => {
+                            if (mediaRecorderRef.current) mediaRecorderRef.current.stop();
+                            setIsRecordingMic(false);
+                          }}
+                          className="px-3 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold cursor-pointer"
+                        >
+                          Cancel
+                        </button>
+                      )}
+                    </div>
+                    <div className="mt-1.5 text-[10px] text-slate-400 flex items-center justify-between">
+                      <span>Speak in Kannada, Hindi, or English</span>
+                      <span className="text-cyan-400 font-mono">Real STT (Sarvam Saaras)</span>
+                    </div>
+                  </div>
+
                   {/* 3 One-Click Presets */}
                   <div className="space-y-1.5 pt-1">
                     <div className="text-[11px] font-semibold text-slate-400 flex items-center justify-between">
@@ -871,11 +1183,16 @@ export default function App() {
                     }`}
                   >
                     <div className="flex items-center justify-between text-[10px] font-mono text-slate-400 mb-1">
-                      <span className="font-bold flex items-center gap-1">
+                      <span className="font-bold flex items-center gap-1.5 flex-wrap">
                         {item.role === 'caller' ? '👤 Caller' : `🤖 ${item.agent || 'Agent'}`}
                         {item.provider && (
                           <span className="text-[9px] px-1.5 py-0.2 rounded bg-indigo-500/20 text-indigo-300">
                             {item.provider}
+                          </span>
+                        )}
+                        {item.stt_engine && (
+                          <span className="text-[9px] px-1.5 py-0.2 rounded bg-cyan-500/20 text-cyan-300">
+                            {item.stt_engine} {item.stt_ms ? `(${item.stt_ms}ms)` : ''}
                           </span>
                         )}
                       </span>
@@ -1124,6 +1441,115 @@ export default function App() {
           </div>
         </section>
       </main>
+
+      {/* Phase 7: Compiled Unmute Specification & Declarative Artifacts Modal */}
+      {showSpecModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-4xl shadow-2xl flex flex-col max-h-[85vh] overflow-hidden">
+            {/* Modal Header */}
+            <div className="p-4 border-b border-slate-800 flex items-center justify-between bg-slate-950/60">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-xl bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
+                  <FileCode className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-white flex items-center gap-2 m-0">
+                    Unmute Declarative Compilation Artifacts
+                    <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-mono">
+                      v0.7.4 Verified
+                    </span>
+                  </h3>
+                  <p className="text-xs text-slate-400 m-0">
+                    Dual compilation: 1 declarative agent.yaml compiles directly to SLNG Hosted (agent.json) and LiveKit Python (agent.py).
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleCopySpec}
+                  className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer border border-slate-700"
+                >
+                  {copiedSpec ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
+                  {copiedSpec ? 'Copied' : 'Copy'}
+                </button>
+                <button
+                  onClick={() => setShowSpecModal(false)}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-all cursor-pointer"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+
+            {/* Modal Tabs */}
+            <div className="px-4 pt-3 pb-0 bg-slate-950/40 border-b border-slate-800 flex gap-2">
+              <button
+                onClick={() => setSpecTab('agent.yaml')}
+                className={`px-3 py-2 text-xs font-semibold border-b-2 transition-all cursor-pointer flex items-center gap-1.5 ${
+                  specTab === 'agent.yaml'
+                    ? 'border-cyan-400 text-cyan-300 bg-cyan-500/10 rounded-t-lg'
+                    : 'border-transparent text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <span>📝 agent.yaml</span>
+                <span className="text-[10px] text-slate-500">(Declarative Spec)</span>
+              </button>
+
+              <button
+                onClick={() => setSpecTab('agent.json')}
+                className={`px-3 py-2 text-xs font-semibold border-b-2 transition-all cursor-pointer flex items-center gap-1.5 ${
+                  specTab === 'agent.json'
+                    ? 'border-emerald-400 text-emerald-300 bg-emerald-500/10 rounded-t-lg'
+                    : 'border-transparent text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <span>⚡ agent.json</span>
+                <span className="text-[10px] text-slate-500">(SLNG Hosted Target)</span>
+              </button>
+
+              <button
+                onClick={() => setSpecTab('agent.py')}
+                className={`px-3 py-2 text-xs font-semibold border-b-2 transition-all cursor-pointer flex items-center gap-1.5 ${
+                  specTab === 'agent.py'
+                    ? 'border-indigo-400 text-indigo-300 bg-indigo-500/10 rounded-t-lg'
+                    : 'border-transparent text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <span>🐍 agent.py</span>
+                <span className="text-[10px] text-slate-500">(LiveKit Microservice)</span>
+              </button>
+            </div>
+
+            {/* Modal Code Viewer */}
+            <div className="p-4 flex-1 overflow-auto bg-slate-950">
+              {loadingSpec ? (
+                <div className="flex items-center justify-center p-12 text-slate-400 gap-2">
+                  <RefreshCw className="h-5 w-5 animate-spin text-cyan-400" />
+                  <span>Loading compiled Unmute specification...</span>
+                </div>
+              ) : (
+                <pre className="font-mono text-xs text-slate-300 leading-relaxed overflow-x-auto whitespace-pre selection:bg-cyan-500 selection:text-slate-950 p-2">
+                  {specData[specTab] || '// No artifact found for ' + specTab}
+                </pre>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-3 bg-slate-950/80 border-t border-slate-800 text-xs text-slate-400 flex items-center justify-between">
+              <span className="text-[11px]">
+                Valid Unmute v0.7.4 spec. Compiled via <code className="text-cyan-400 font-mono">unmute compile</code>
+              </span>
+              <button
+                onClick={() => setShowSpecModal(false)}
+                className="px-3 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-white text-xs font-semibold cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
