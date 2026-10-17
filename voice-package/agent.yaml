@@ -5,7 +5,9 @@ entry_agent: intake_triage
 secrets:
   - FASTAPI_BACKEND_URL
   - GEMINI_API_KEY
+  - GNANI_API_KEY
   - GOOGLE_API_KEY
+  - SARVAM_API_KEY
   - SLNG_API_KEY
 
 models:
