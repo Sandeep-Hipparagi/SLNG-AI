@@ -208,15 +208,35 @@ def test_live_providers():
         "savings": f"-{audio_turn_data['timings']['latency_reduction_percent']}%",
     })
 
-    # 7. SLNG Context Router Fast-Path (Turn 2 Caller Confirmation)
-    print("\n> STEP 7: Testing Turn 2 Caller Confirmation - SLNG Context Router Fast-Path (0 LLM Tokens)...")
-    payload_turn2 = {
+    # 7. Dedicated 2-Turn Sequence: Turn 1 (Gemini Triage) -> Turn 2 (SLNG Context Router Fast-Path)
+    print("\n> STEP 7: Testing Dedicated 2-Turn Sequence (Turn 1: Gemini Triage -> Turn 2: Context Router Fast-Path)...")
+    client.post("/api/session/reset")
+
+    # Turn 1: Emergency Report (Gemini 2.5 Flash Triage)
+    turn1_payload = {
+        "utterance": "Anna, Peenya Phase 2 factory alli gas leak aagide! My name is Rajesh, please send fire brigade fast!",
+        "voice_provider": "slng-sarvam",
+        "language_code": "kn-IN",
+        "noise_db": 78.5,
+    }
+    t1_res = client.post("/api/voice/live-turn", json=turn1_payload)
+    assert t1_res.status_code == 200, f"Turn 1 failed: {t1_res.text}"
+    t1_data = t1_res.json()
+    assert t1_data["success"] is True
+    assert t1_data["is_fast_path"] is False
+    assert t1_data["context_router_decision"] == "GEMINI_REASONING_ROUTE"
+    ticket_id_turn1 = t1_data["incident_ticket"]["ticket_number"]
+    assert ticket_id_turn1.startswith("IND-")
+    print(f"  [OK] Turn 1 Triage Complete: Ticket {ticket_id_turn1} dispatched via Gemini 2.5 Flash (TTFT: {t1_data['timings']['llm_ttft_ms']}ms)")
+
+    # Turn 2: Caller Confirmation Fast-Path (0 LLM Tokens, <350ms Latency)
+    turn2_payload = {
         "utterance": "Haudu Anna, dispatch confirm maadi, bega banni!",
         "voice_provider": "slng-sarvam",
         "language_code": "kn-IN",
         "noise_db": 78.5,
     }
-    turn2_res = client.post("/api/voice/live-turn", json=payload_turn2)
+    turn2_res = client.post("/api/voice/live-turn", json=turn2_payload)
     assert turn2_res.status_code == 200, f"Turn 2 fast-path failed: {turn2_res.text}"
     turn2_data = turn2_res.json()
 
@@ -224,15 +244,17 @@ def test_live_providers():
     assert turn2_data["context_router_decision"] == "FAST_PATH_CACHE_HIT"
     assert turn2_data["is_fast_path"] is True
     assert turn2_data["timings"]["llm_ttft_ms"] <= 10.0
+    assert turn2_data["timings"]["e2e_turn_ms"] < 350.0, f"Expected Turn 2 E2E < 350ms, got {turn2_data['timings']['e2e_turn_ms']}ms"
+    assert turn2_data["incident_ticket"]["ticket_number"] == ticket_id_turn1, f"Ticket mismatch: {turn2_data['incident_ticket']['ticket_number']} vs {ticket_id_turn1}"
     assert turn2_data["audio_quality_metrics"]["context_router_mode"] == "FAST_PATH_0_LLM_TOKENS"
     assert turn2_data["audio_quality_metrics"]["session_llm_cost_reduction_pct"] == 100.0
     assert len(turn2_data["audio_base64"]) > 500
 
     print(f"  [OK] Context Router Decision: {turn2_data['context_router_decision']} (0 LLM TOKENS)")
     print(f"  [OK] Fast-Path TTFT: {turn2_data['timings']['llm_ttft_ms']}ms (vs ~142ms heavy LLM)")
-    print(f"  [OK] Preserved Incident Ticket: {turn2_data['incident_ticket']['ticket_number']}")
+    print(f"  [OK] Preserved Incident Ticket: {turn2_data['incident_ticket']['ticket_number']} (Matched Turn 1 {ticket_id_turn1})")
     print(f"  [OK] Fast-Path Reply: {turn2_data['spoken_reply']}")
-    print(f"  [OK] E2E Fast-Path Turn: {turn2_data['timings']['e2e_turn_ms']}ms (Savings: -{turn2_data['timings']['latency_reduction_percent']}%)")
+    print(f"  [OK] E2E Fast-Path Turn: {turn2_data['timings']['e2e_turn_ms']}ms (<350ms SLA met! Savings: -{turn2_data['timings']['latency_reduction_percent']}%)")
     print(f"  [OK] Audio Quality SNR Gain: {turn2_data['audio_quality_metrics']['snr_gain_db']} (WER: {turn2_data['audio_quality_metrics']['after_slng_wer_pct']}%)")
 
     latency_table.append({
