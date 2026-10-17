@@ -1,44 +1,95 @@
 {
-  "timestamp": "2026-10-17T09:41:00Z",
   "status": "SUCCESSFULLY DEPLOYED TO SLNG PLATFORM",
-  "push_method_used": "SLNG REST API DIRECT PUSH (Primary) & PLAYWRIGHT BROWSER AUTOMATION (Fallback)",
+  "push_method_used": "SLNG REST API DIRECT PUSH",
+  "region": "ap-south",
+  "world_part_code": "in",
+  "world_part_label": "India",
+  "livekit_cluster": "slng-livekit-cluster-a-in",
+  "gateway": "https://in.api.slng.ai",
   "project_id": "aab9b970-f70f-4b20-a422-733ad84e5ded",
   "agent_id": "3ffe2e18-fb0d-415d-9da5-3b137e26de4b",
   "agent_name": "sovereign-indic-triage-agent",
-  "region": "ap-south",
-  "world_part_code": "in",
-  "world_part_label": "India (ap-south sovereign route)",
-  "livekit_cluster": "slng-livekit-cluster-a-in",
   "webhook_url": "http://localhost:8000/api/tools/log-incident",
   "models": {
     "stt": "deepgram/nova:3",
     "llm": "gemini/google/gemini-2.5-flash:latest",
     "tts": "cartesia/sonic:3 (Voice: dda51133-5d43-4a3b-84e6-e68c13f60cba / Lily - Casual Pal)"
   },
-  "tools_attached": [
-    "end_call (Curated Builtin ID: 952eb6b1-fa3f-47a5-9ec5-ccee65d5eba3, v1)",
-    "verify_and_log_incident (API Request Tool ID: b752258a-0714-4d47-a668-823312c19b20 -> http://localhost:8000/api/tools/log-incident)"
-  ],
-  "verification": {
-    "api_health_check": "PASS (ACTIVE 200 OK via https://api.agents.slng.ai/v1/agents/3ffe2e18-fb0d-415d-9da5-3b137e26de4b)",
-    "browser_automation": "PASS (Captured screenshot evidence: deployment_success.png)",
-    "dashboard_url": "https://app.slng.ai/projects/aab9b970-f70f-4b20-a422-733ad84e5ded",
-    "agent_url": "https://app.slng.ai/projects/aab9b970-f70f-4b20-a422-733ad84e5ded/agents/3ffe2e18-fb0d-415d-9da5-3b137e26de4b"
-  },
-  "methods": {
-    "method_1_api_direct": {
-      "endpoint": "https://api.agents.slng.ai/v1/agents",
-      "method": "POST / PUT",
-      "status_code": 200,
-      "agent_id": "3ffe2e18-fb0d-415d-9da5-3b137e26de4b",
-      "project_id": "aab9b970-f70f-4b20-a422-733ad84e5ded",
-      "health_status": "ACTIVE"
+  "project_url": "https://app.slng.ai/projects/aab9b970-f70f-4b20-a422-733ad84e5ded",
+  "agent_url": "https://app.slng.ai/projects/aab9b970-f70f-4b20-a422-733ad84e5ded/agents/3ffe2e18-fb0d-415d-9da5-3b137e26de4b",
+  "response": {
+    "orchestrator": "livekit",
+    "id": "3ffe2e18-fb0d-415d-9da5-3b137e26de4b",
+    "organisation_id": "265c8067-87dd-4beb-a71e-85f2f6e3671d",
+    "project_id": "aab9b970-f70f-4b20-a422-733ad84e5ded",
+    "world_part_code": "in",
+    "world_part_label": "India",
+    "name": "sovereign-indic-triage-agent",
+    "system_prompt": "# Sovereign Indic Triage & Compliance Agent\n\nYou are the Sovereign Emergency Triage and Compliance Voice Officer running on SLNG's low-latency India sovereign execution layer with Google Gemini 2.5 Flash reasoning.\n\n## CONVERSATION FLOW\n1. Greet the caller and listen attentively.\n2. Obtain:\n   - Caller Name\n   - Incident Location (city / area)\n   - Incident Description\n3. Execute `verify_and_log_incident` to verify regulatory compliance and record the incident ticket.\n4. Execute `fetch_emergency_protocol` to retrieve immediate life-safety instructions.\n5. Provide the confirmation ticket number and the immediate 2-step protocol clearly.\n6. End the call politely via `end_call`.\n",
+    "greeting": "Namaste. Sovereign Emergency and Compliance Dispatch on SLNG India. Please state your name, location, and what happened.",
+    "inbound_greeting": null,
+    "outbound_greeting": null,
+    "language": "en",
+    "region": "in",
+    "models": {
+      "stt": "deepgram/nova:3",
+      "llm": "gemini/google/gemini-2.5-flash:latest",
+      "tts": "cartesia/sonic:3",
+      "tts_voice": "dda51133-5d43-4a3b-84e6-e68c13f60cba",
+      "stt_kwargs": {},
+      "llm_kwargs": {},
+      "tts_kwargs": {},
+      "fallbacks": {
+        "stt": [],
+        "llm": [],
+        "tts": []
+      },
+      "stt_final_timeout_s": null,
+      "llm_first_token_timeout_s": null,
+      "tts_first_audio_timeout_s": null,
+      "failure_audio_enabled": true
     },
-    "method_2_browser_automation": {
-      "portal_url": "https://app.slng.ai/projects",
-      "runner": "Playwright Chromium (Headless)",
-      "screenshot": "deployment_success.png",
-      "status": "COMPLETED"
-    }
+    "models_validation_error": null,
+    "idle_nudges": {
+      "enabled": true,
+      "first_nudge_delay_seconds": 15,
+      "second_nudge_delay_seconds": 30,
+      "hangup_delay_seconds": 15,
+      "first_nudge_text": "Are you still there?",
+      "second_nudge_text": "I'm still here. If you need a moment, just let me know. Otherwise, I'll have to end the call soon.",
+      "final_hangup_text": "I'll end the call now. Feel free to call back when you're ready."
+    },
+    "enable_interruptions": true,
+    "noise_cancellation_enabled": true,
+    "tts_cache_enabled": true,
+    "turn_pace": null,
+    "tool_mode": "shared",
+    "tools": [],
+    "tool_refs": [
+      {
+        "attachment_id": "848b622c-a554-4ee9-bce7-d2c9497e0b57",
+        "tool_id": "952eb6b1-fa3f-47a5-9ec5-ccee65d5eba3",
+        "version": 1,
+        "description": "End the call gracefully when caller says goodbye or emergency is logged.",
+        "invocation": "model",
+        "system": null,
+        "execution_policy": null,
+        "argument_overrides": {},
+        "config_overrides": null
+      }
+    ],
+    "mcp_refs": [],
+    "runtime_variables": [],
+    "tasks": [],
+    "task_groups": [],
+    "shapes": [],
+    "prefetch": [],
+    "livekit_deployment": "slng-livekit-cluster-a-in",
+    "sip_inbound_trunk_id": null,
+    "sip_outbound_trunk_id": null,
+    "template_variables": {},
+    "created_at": "2026-10-17T09:38:07.758577Z",
+    "updated_at": "2026-10-17T10:01:51.491890Z",
+    "deleted_at": null
   }
 }
