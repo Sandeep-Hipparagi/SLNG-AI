@@ -1,0 +1,52 @@
+name: Sovereign Indic Voice Agent CI (Unmute + SLNG)
+
+on:
+  push:
+    branches: [ master, main ]
+  pull_request:
+    branches: [ master, main ]
+
+jobs:
+  validate-and-test:
+    name: Unmute Spec Validation & Suite Verification
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Python Dependencies & unmute-core
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e reference/unmute-core
+          pip install -r backend/requirements.txt pytest
+
+      - name: Verify unmute-core Primitives & Schemas
+        run: |
+          python -c "import unmute_core; from unmute_core.state import CallState; from unmute_core.tools import ToolRegistry; print('unmute-core v' + unmute_core.__version__ + ' loaded successfully!')"
+
+      - name: Run Schema Compiler Tests
+        run: |
+          python tests/test_schema_compiler.py
+
+      - name: Run Webhook & Handoff Integration Tests
+        run: |
+          python tests/test_webhook_handoff.py
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: dashboard/package-lock.json
+
+      - name: Build Production Dashboard
+        run: |
+          cd dashboard
+          npm ci
+          npm run build
